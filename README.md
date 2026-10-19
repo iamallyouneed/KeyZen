@@ -5,7 +5,7 @@
 </h3>
 
 <p align="center">
-  <b>한국어</b> &bull; <a href="docs/configuration.md">설정 문서</a> &bull; <a href="CHANGELOG.md">변경 기록</a>
+  <b>한국어</b> &bull; <a href="docs/README.md">문서 (Docs)</a> &bull; <a href="CHANGELOG.md">변경 기록</a>
 </p>
 
 <p align="center">
