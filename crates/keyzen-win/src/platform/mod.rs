@@ -34,12 +34,6 @@ pub fn run_controlled(
 ) -> Result<(), KeyzenWinError> {
     let runtime = Arc::new(Runtime::new(config, paused));
     let _ = RUNTIME.set(runtime.clone());
-    info!(
-        target: "keyzen_win::lifecycle",
-        paused,
-        has_config = runtime.has_engine(),
-        "remapping runtime initializing"
-    );
 
     let thread_id = unsafe { GetCurrentThreadId() };
     // Create this thread's message queue up front. PostThreadMessageW fails on a thread
@@ -57,10 +51,6 @@ pub fn run_controlled(
                     command_runtime.replace_config(config);
                 }
                 Ok(RuntimeCommand::Stop) => {
-                    info!(
-                        target: "keyzen_win::lifecycle",
-                        "remapping runtime stop command received"
-                    );
                     command_runtime.set_paused(true);
                     if unsafe { PostThreadMessageW(thread_id, WM_QUIT, 0, 0) } == 0 {
                         warn!(
@@ -114,16 +104,12 @@ pub fn run_controlled(
     );
 
     let result = message_loop();
-    match &result {
-        Ok(()) => info!(
-            target: "keyzen_win::lifecycle",
-            "remapping runtime message loop stopped"
-        ),
-        Err(error) => error!(
+    if let Err(error) = &result {
+        error!(
             target: "keyzen_win::lifecycle",
             %error,
             "remapping runtime message loop failed"
-        ),
+        );
     }
 
     if unsafe { UnhookWindowsHookEx(keyboard_hook) } == 0 {
@@ -136,7 +122,6 @@ pub fn run_controlled(
     runtime.running.store(false, Ordering::SeqCst);
     let _ = command_thread.join();
     let _ = timer_thread.join();
-    info!(target: "keyzen_win::lifecycle", "remapping runtime stopped");
 
     result
 }

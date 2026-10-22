@@ -1,10 +1,9 @@
 use super::super::{ID_CHOOSE_KEY_CONFIG, ID_PAUSE, ID_QUIT, ID_START_AT_LOGIN};
-use super::icon;
-use super::{STATE, operation_error};
+use super::{STATE, icon, operation_error, window};
 use crate::RuntimeCommand;
 use crate::app_settings;
 use crate::startup::{TaskSchedulerStartup, update_start_at_login};
-use crate::tray::{TrayError, TrayMenuCommand, status_label};
+use crate::tray::{ShutdownReason, TrayError, TrayMenuCommand, status_label};
 use std::ffi::c_void;
 use std::path::PathBuf;
 use windows::Win32::Foundation::{ERROR_CANCELLED, HWND, POINT};
@@ -12,9 +11,9 @@ use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, CoTask
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH};
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DestroyMenu, DestroyWindow, GetCursorPos, MENU_ITEM_FLAGS,
-    MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, SetForegroundWindow,
-    TPM_RIGHTBUTTON, TrackPopupMenu,
+    AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, MENU_ITEM_FLAGS, MF_CHECKED,
+    MF_GRAYED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, SetForegroundWindow, TPM_RIGHTBUTTON,
+    TrackPopupMenu,
 };
 use windows::core::{HRESULT, PCWSTR, w};
 
@@ -81,24 +80,7 @@ pub(super) fn handle_command(hwnd: HWND, command: TrayMenuCommand) {
         TrayMenuCommand::Pause => toggle_pause(hwnd),
         TrayMenuCommand::StartAtLogin => toggle_start_at_login(hwnd),
         TrayMenuCommand::ChooseKeyConfig => choose_key_config(hwnd),
-        TrayMenuCommand::Quit => unsafe {
-            if let Some(state) = STATE.get()
-                && let Ok(mut state) = state.lock()
-            {
-                state.shutdown_reason = Some("tray_menu_quit");
-            }
-            tracing::info!(
-                target: "keyzen_win::lifecycle",
-                "tray Quit command requested"
-            );
-            if let Err(error) = DestroyWindow(hwnd) {
-                tracing::error!(
-                    target: "keyzen_win::lifecycle",
-                    %error,
-                    "failed to destroy tray hidden window"
-                );
-            }
-        },
+        TrayMenuCommand::Quit => window::request_shutdown(hwnd, ShutdownReason::TrayQuit),
     }
 }
 

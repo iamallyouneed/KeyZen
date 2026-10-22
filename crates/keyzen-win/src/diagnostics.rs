@@ -40,26 +40,15 @@ impl TrayDiagnostics {
                     .expect("debug event log directive should be valid"),
             );
         }
-        let filter = filter.add_directive(
-            "keyzen_win::lifecycle=info"
-                .parse()
-                .expect("tray lifecycle log directive should be valid"),
-        );
         tracing_subscriber::fmt()
             .with_ansi(false)
+            .with_target(false)
             .with_env_filter(filter)
             .with_writer(SharedMakeWriter { log: log.clone() })
             .try_init()
             .map_err(io::Error::other)?;
 
         install_panic_hook();
-
-        tracing::info!(
-            target: "keyzen_win::lifecycle",
-            pid = std::process::id(),
-            log_path = %log_path.display(),
-            "tray diagnostics initialized"
-        );
 
         Ok(Self {
             log,
@@ -78,12 +67,6 @@ impl TrayDiagnostics {
         }
         fs::write(&self.marker_path, session_marker())?;
         self.session_started = true;
-
-        tracing::info!(
-            target: "keyzen_win::lifecycle",
-            pid = std::process::id(),
-            "tray session marker created"
-        );
 
         Ok(())
     }

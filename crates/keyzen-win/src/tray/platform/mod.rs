@@ -7,7 +7,7 @@ use crate::app_settings::{self, AppPaths, AppSettings};
 use crate::diagnostics::TrayDiagnostics;
 use crate::single_instance::{SingleInstance, SingleInstanceError};
 use crate::startup::{StartupRegistration, TaskSchedulerStartup};
-use crate::tray::{TrayError, is_clean_shutdown_reason};
+use crate::tray::{ShutdownReason, TrayError};
 use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock, mpsc};
@@ -34,7 +34,7 @@ struct TrayState {
     config_path: PathBuf,
     mapped_keys: usize,
     tray_exe: PathBuf,
-    shutdown_reason: Option<&'static str>,
+    shutdown_reason: Option<ShutdownReason>,
 }
 
 struct ComGuard;
@@ -97,22 +97,24 @@ pub fn run_tray_app() -> Result<(), TrayError> {
         target: "keyzen_win::lifecycle",
         pid = std::process::id(),
         exe = %exe,
-        "tray process started"
+        "tray started"
     );
 
     let result = run_tray_session();
-    let clean_shutdown = session_ended_cleanly();
+    let reason = shutdown_reason();
+    let clean_shutdown = reason.is_some();
+    let reason = reason.map(ShutdownReason::as_str).unwrap_or("none");
     match &result {
         Ok(()) => tracing::info!(
             target: "keyzen_win::lifecycle",
-            clean_shutdown,
-            "tray process exited normally"
+            reason,
+            "tray stopped"
         ),
         Err(error) => tracing::error!(
             target: "keyzen_win::lifecycle",
             %error,
-            clean_shutdown,
-            "tray process exited with an error"
+            reason,
+            "tray stopped"
         ),
     }
     if let Some(diagnostics) = diagnostics {
@@ -199,25 +201,18 @@ fn run_tray_session() -> Result<(), TrayError> {
     // HWND wraps a raw pointer, so pass its value across the thread boundary.
     let hwnd_bits = hwnd.0 as usize;
     let runtime = thread::spawn(move || {
-        tracing::info!(target: "keyzen_win::lifecycle", "remapping runtime thread started");
         let result = crate::run_controlled(config, paused, runtime_rx);
-        match &result {
-            Ok(()) => tracing::info!(
+        if let Err(error) = &result {
+            tracing::error!(
                 target: "keyzen_win::lifecycle",
-                "remapping runtime thread stopped"
-            ),
-            Err(error) => {
-                tracing::error!(
-                    target: "keyzen_win::lifecycle",
-                    %error,
-                    "remapping runtime thread failed"
+                %error,
+                "remapping runtime failed"
+            );
+            if !shutdown_requested() {
+                icon::show_notification(
+                    HWND(hwnd_bits as *mut c_void),
+                    &format!("KeyZen keyboard remapping stopped.\n{error}"),
                 );
-                if !shutdown_requested() {
-                    icon::show_notification(
-                        HWND(hwnd_bits as *mut c_void),
-                        &format!("KeyZen keyboard remapping stopped.\n{error}"),
-                    );
-                }
             }
         }
         result
@@ -244,16 +239,6 @@ fn run_tray_session() -> Result<(), TrayError> {
         }
     }
 
-    let shutdown_reason = STATE
-        .get()
-        .and_then(|state| state.lock().ok())
-        .and_then(|state| state.shutdown_reason)
-        .unwrap_or("message_loop_ended_without_destroy");
-    tracing::info!(
-        target: "keyzen_win::lifecycle",
-        shutdown_reason,
-        "tray message loop stopped"
-    );
     icon::delete_tray_icon(hwnd);
     if let Some(state) = STATE.get()
         && let Ok(state) = state.lock()
@@ -267,12 +252,11 @@ fn run_tray_session() -> Result<(), TrayError> {
     join_runtime(runtime)
 }
 
-fn session_ended_cleanly() -> bool {
+fn shutdown_reason() -> Option<ShutdownReason> {
     STATE
         .get()
         .and_then(|state| state.lock().ok())
         .and_then(|state| state.shutdown_reason)
-        .is_some_and(is_clean_shutdown_reason)
 }
 
 const RUNTIME_STOP_TIMEOUT: Duration = Duration::from_secs(5);

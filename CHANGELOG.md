@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 - 2026-10-22
 
 - Consolidate the two executables into a single console-less `keyzen.exe`. The tray runtime is now the only entry point; the launcher, foreground remapper, `validate`/`dump` subcommands, `--config`, and `--debug-events` are removed.
 - Merge the `keyzen-cli` crate into `keyzen-win`: one crate now builds the `keyzen` binary, and `cargo run` still starts the tray.
@@ -11,6 +11,8 @@
 - Restore the tray icon after Explorer restarts instead of trusting the existing registration state.
 - Remove the running marker when a session ends through Quit, logoff, or a hidden-window close, even if the remapping runtime reported an error; the next start no longer reports a false unclean shutdown.
 - Show a tray notification when the remapping runtime stops unexpectedly instead of failing silently.
+- Simplify lifecycle logging to start, config, tray icon, hook, shutdown request, and final stop; thread-level chatter and the target prefix are gone.
+- Simplify shutdown bookkeeping: a recorded shutdown reason (enum) is the only clean-shutdown signal, and Quit, logoff, and window close share one helper.
 - Log the Windows error when tray icon registration fails, and write `keyzen-startup-error.log` next to the executable when the normal log cannot be opened.
 - Show a dialog when a second launch is refused because KeyZen is already running, and log the executable path at startup.
 - Show the active key config file and its mapping count at the top of the tray menu.

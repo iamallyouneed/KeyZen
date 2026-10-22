@@ -1,6 +1,6 @@
 use super::icon::{self, WM_TRAY_ICON};
 use super::{ALREADY_RUNNING, STATE, TASKBAR_CREATED, current_paused, menu, operation_error};
-use crate::tray::{TrayError, command_from_menu_id};
+use crate::tray::{ShutdownReason, TrayError, command_from_menu_id};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -53,6 +53,27 @@ pub(super) fn create_hidden_window() -> Result<HWND, TrayError> {
             None,
         )
         .map_err(|error| operation_error(format!("CreateWindowExW failed: {error}")))
+    }
+}
+
+pub(super) fn request_shutdown(hwnd: HWND, reason: ShutdownReason) {
+    if let Some(state) = STATE.get()
+        && let Ok(mut state) = state.lock()
+        && state.shutdown_reason.is_none()
+    {
+        state.shutdown_reason = Some(reason);
+    }
+    tracing::info!(
+        target: "keyzen_win::lifecycle",
+        reason = reason.as_str(),
+        "shutdown requested"
+    );
+    if let Err(error) = unsafe { DestroyWindow(hwnd) } {
+        tracing::error!(
+            target: "keyzen_win::lifecycle",
+            %error,
+            "failed to destroy tray window"
+        );
     }
 }
 
@@ -109,29 +130,15 @@ unsafe extern "system" fn window_proc(
             LRESULT(1)
         }
         WM_ENDSESSION if wparam.0 != 0 => {
-            if let Some(state) = STATE.get()
-                && let Ok(mut state) = state.lock()
-            {
-                state.shutdown_reason = Some("windows_session_ending");
-            }
             tracing::info!(
                 target: "keyzen_win::lifecycle",
                 "Windows session is ending"
             );
-            let _ = unsafe { DestroyWindow(hwnd) };
+            request_shutdown(hwnd, ShutdownReason::SessionEnd);
             LRESULT(0)
         }
         WM_CLOSE => {
-            if let Some(state) = STATE.get()
-                && let Ok(mut state) = state.lock()
-            {
-                state.shutdown_reason = Some("hidden_window_close_message");
-            }
-            tracing::warn!(
-                target: "keyzen_win::lifecycle",
-                "tray hidden window received WM_CLOSE"
-            );
-            let _ = unsafe { DestroyWindow(hwnd) };
+            request_shutdown(hwnd, ShutdownReason::WindowClose);
             LRESULT(0)
         }
         WM_DESTROY => {
@@ -139,10 +146,10 @@ unsafe extern "system" fn window_proc(
                 && let Ok(mut state) = state.lock()
                 && state.shutdown_reason.is_none()
             {
-                state.shutdown_reason = Some("hidden_window_destroyed");
+                state.shutdown_reason = Some(ShutdownReason::WindowDestroyed);
                 tracing::warn!(
                     target: "keyzen_win::lifecycle",
-                    "tray hidden window was destroyed without a tray Quit request"
+                    "tray window was destroyed without a shutdown request"
                 );
             }
             // Remove the icon while the window handle is still valid, then quit.

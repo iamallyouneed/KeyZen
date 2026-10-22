@@ -40,16 +40,25 @@ pub(crate) fn status_label(loaded: bool, path: &Path, mapped_keys: usize) -> Str
     }
 }
 
-/// A session ends cleanly when the tray asked for shutdown (Quit, Windows session end,
-/// or a close on the hidden window) rather than the message loop failing on its own.
-pub fn is_clean_shutdown_reason(reason: &str) -> bool {
-    matches!(
-        reason,
-        "tray_menu_quit"
-            | "windows_session_ending"
-            | "hidden_window_close_message"
-            | "hidden_window_destroyed"
-    )
+/// A recorded reason means the session was asked to end; no reason means it did not
+/// reach a shutdown path (message-loop failure, forced kill).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShutdownReason {
+    TrayQuit,
+    SessionEnd,
+    WindowClose,
+    WindowDestroyed,
+}
+
+impl ShutdownReason {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::TrayQuit => "tray_menu_quit",
+            Self::SessionEnd => "windows_session_ending",
+            Self::WindowClose => "hidden_window_close_message",
+            Self::WindowDestroyed => "hidden_window_destroyed",
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -75,9 +84,7 @@ pub use platform::run_tray_app;
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        MENU_LABELS, TrayMenuCommand, command_from_menu_id, is_clean_shutdown_reason, status_label,
-    };
+    use super::{MENU_LABELS, ShutdownReason, TrayMenuCommand, command_from_menu_id, status_label};
     use std::path::Path;
 
     #[test]
@@ -118,22 +125,19 @@ mod tests {
     }
 
     #[test]
-    fn treats_shutdown_requests_as_clean_session_endings() {
-        for reason in [
-            "tray_menu_quit",
-            "windows_session_ending",
-            "hidden_window_close_message",
-            "hidden_window_destroyed",
-        ] {
-            assert!(is_clean_shutdown_reason(reason), "{reason}");
-        }
-
-        for reason in [
-            "message_loop_ended_without_destroy",
-            "tray_menu_quit_later",
-            "",
-        ] {
-            assert!(!is_clean_shutdown_reason(reason), "{reason}");
-        }
+    fn shutdown_reasons_have_stable_log_names() {
+        assert_eq!(ShutdownReason::TrayQuit.as_str(), "tray_menu_quit");
+        assert_eq!(
+            ShutdownReason::SessionEnd.as_str(),
+            "windows_session_ending"
+        );
+        assert_eq!(
+            ShutdownReason::WindowClose.as_str(),
+            "hidden_window_close_message"
+        );
+        assert_eq!(
+            ShutdownReason::WindowDestroyed.as_str(),
+            "hidden_window_destroyed"
+        );
     }
 }
