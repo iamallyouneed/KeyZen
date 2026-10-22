@@ -37,6 +37,7 @@ pub(super) fn try_add_tray_icon(hwnd: HWND, paused: bool, force_restore: bool) -
         TRAY_ICON_CREATED.store(false, Ordering::SeqCst);
         tracing::warn!(
             target: "keyzen_win::lifecycle",
+            error = %std::io::Error::last_os_error(),
             "failed to register tray icon"
         );
         return false;
@@ -46,6 +47,7 @@ pub(super) fn try_add_tray_icon(hwnd: HWND, paused: bool, force_restore: bool) -
     if !unsafe { Shell_NotifyIconW(NIM_SETVERSION, &data) }.as_bool() {
         tracing::warn!(
             target: "keyzen_win::lifecycle",
+            error = %std::io::Error::last_os_error(),
             "failed to set tray icon notification version"
         );
     }

@@ -46,9 +46,21 @@ impl Drop for ComGuard {
 }
 
 pub fn run_tray_app() -> Result<(), TrayError> {
-    let mut diagnostics = AppPaths::discover()
-        .ok()
-        .and_then(|paths| TrayDiagnostics::initialize(&paths).ok());
+    let mut diagnostics = match AppPaths::discover() {
+        Ok(paths) => match TrayDiagnostics::initialize(&paths) {
+            Ok(diagnostics) => Some(diagnostics),
+            Err(error) => {
+                report_startup_error(format!("failed to initialize tray diagnostics: {error}"));
+                None
+            }
+        },
+        Err(error) => {
+            report_startup_error(format!(
+                "failed to locate the KeyZen app data folder: {error}"
+            ));
+            None
+        }
+    };
     let _instance = match SingleInstance::acquire() {
         Ok(instance) => instance,
         Err(SingleInstanceError::AlreadyRunning) => {
@@ -339,4 +351,29 @@ pub(super) fn current_paused() -> bool {
 
 pub(super) fn operation_error(error: impl ToString) -> TrayError {
     TrayError::Operation(error.to_string())
+}
+
+/// The normal log lives in `%APPDATA%`, which restricted launch contexts may deny.
+/// Leave a breadcrumb next to the executable so a silent startup failure is visible.
+fn report_startup_error(message: impl std::fmt::Display) {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(dir) = exe.parent() else {
+        return;
+    };
+    let path = dir.join("keyzen-startup-error.log");
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or_default();
+    let line = format!("unix={unix} {message}\n");
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = file.write_all(line.as_bytes());
+    }
 }
