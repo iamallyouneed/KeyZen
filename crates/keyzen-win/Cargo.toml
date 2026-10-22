@@ -1,6 +1,6 @@
 [package]
 name = "keyzen-win"
-version = "1.0.2"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 
