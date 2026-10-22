@@ -23,6 +23,18 @@ pub fn command_from_menu_id(id: usize) -> Option<TrayMenuCommand> {
     }
 }
 
+/// A session ends cleanly when the tray asked for shutdown (Quit, Windows session end,
+/// or a close on the hidden window) rather than the message loop failing on its own.
+pub fn is_clean_shutdown_reason(reason: &str) -> bool {
+    matches!(
+        reason,
+        "tray_menu_quit"
+            | "windows_session_ending"
+            | "hidden_window_close_message"
+            | "hidden_window_destroyed"
+    )
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TrayError {
     #[error("KeyZen tray is only supported on Windows")]
@@ -42,7 +54,7 @@ pub fn run_tray_app() -> Result<(), TrayError> {
 mod platform {
     use super::{
         ID_CHOOSE_KEY_CONFIG, ID_PAUSE, ID_QUIT, ID_START_AT_LOGIN, TrayError, TrayMenuCommand,
-        command_from_menu_id,
+        command_from_menu_id, is_clean_shutdown_reason,
     };
     use crate::RuntimeCommand;
     use crate::app_settings::{self, AppPaths, AppSettings};
@@ -142,21 +154,32 @@ mod platform {
         );
 
         let result = run_tray_session();
+        let clean_shutdown = session_ended_cleanly();
         match &result {
             Ok(()) => tracing::info!(
                 target: "keyzen_win::lifecycle",
+                clean_shutdown,
                 "tray process exited normally"
             ),
             Err(error) => tracing::error!(
                 target: "keyzen_win::lifecycle",
                 %error,
+                clean_shutdown,
                 "tray process exited with an error"
             ),
         }
         if let Some(diagnostics) = diagnostics {
-            diagnostics.complete(result.is_ok());
+            diagnostics.complete(clean_shutdown);
         }
         result
+    }
+
+    fn session_ended_cleanly() -> bool {
+        STATE
+            .get()
+            .and_then(|state| state.lock().ok())
+            .and_then(|state| state.shutdown_reason)
+            .is_some_and(is_clean_shutdown_reason)
     }
 
     fn run_tray_session() -> Result<(), TrayError> {
@@ -202,7 +225,7 @@ mod platform {
             .map_err(|_| operation_error("tray state was already initialized"))?;
 
         let hwnd = create_hidden_window()?;
-        if try_add_tray_icon(hwnd) {
+        if try_add_tray_icon(hwnd, false) {
             tracing::info!(target: "keyzen_win::lifecycle", "tray icon registered");
         }
         let runtime = thread::spawn(move || {
@@ -322,15 +345,20 @@ mod platform {
                 target: "keyzen_win::lifecycle",
                 "TaskbarCreated received; restoring tray icon"
             );
-            let _ = try_add_tray_icon(hwnd);
+            if try_add_tray_icon(hwnd, true) {
+                tracing::info!(target: "keyzen_win::lifecycle", "tray icon restored");
+            } else {
+                tracing::warn!(
+                    target: "keyzen_win::lifecycle",
+                    "failed to restore tray icon after TaskbarCreated"
+                );
+            }
             return LRESULT(0);
         }
 
         match message {
             WM_WINDOWPOSCHANGING => {
-                if !TRAY_ICON_CREATED.load(Ordering::SeqCst) {
-                    let _ = try_add_tray_icon(hwnd);
-                }
+                let _ = try_add_tray_icon(hwnd, false);
                 LRESULT(0)
             }
             WM_TRAY_ICON
@@ -596,8 +624,10 @@ mod platform {
         }
     }
 
-    fn try_add_tray_icon(hwnd: HWND) -> bool {
-        if TRAY_ICON_CREATED.load(Ordering::SeqCst) {
+    /// Adds the icon once. `force_restore` re-registers it even when the flag says it
+    /// already exists, which is required after Explorer restarts and drops every icon.
+    fn try_add_tray_icon(hwnd: HWND, force_restore: bool) -> bool {
+        if !force_restore && TRAY_ICON_CREATED.load(Ordering::SeqCst) {
             return true;
         }
 
@@ -696,7 +726,7 @@ pub use platform::run_tray_app;
 
 #[cfg(test)]
 mod tests {
-    use super::{MENU_LABELS, TrayMenuCommand, command_from_menu_id};
+    use super::{MENU_LABELS, TrayMenuCommand, command_from_menu_id, is_clean_shutdown_reason};
 
     #[test]
     fn maps_command_ids_to_english_menu_events() {
@@ -715,5 +745,25 @@ mod tests {
         );
         assert_eq!(command_from_menu_id(1004), Some(TrayMenuCommand::Quit));
         assert_eq!(command_from_menu_id(9999), None);
+    }
+
+    #[test]
+    fn treats_shutdown_requests_as_clean_session_endings() {
+        for reason in [
+            "tray_menu_quit",
+            "windows_session_ending",
+            "hidden_window_close_message",
+            "hidden_window_destroyed",
+        ] {
+            assert!(is_clean_shutdown_reason(reason), "{reason}");
+        }
+
+        for reason in [
+            "message_loop_ended_without_destroy",
+            "tray_menu_quit_later",
+            "",
+        ] {
+            assert!(!is_clean_shutdown_reason(reason), "{reason}");
+        }
     }
 }

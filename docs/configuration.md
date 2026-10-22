@@ -8,19 +8,17 @@ KeyZen 키 매핑 설정(`keyzen.yaml`)의 파일 구조, 레이어 해석 규�
 
 ## 1. 설정 파일
 
-KeyZen 설정 파일은 YAML 형식입니다. 기본 실행 파일명은 `keyzen.yaml`이며, 다른 파일을 쓰려면 `--config`로 경로를 넘깁니다.
+KeyZen 설정 파일은 YAML 형식입니다. KeyZen은 `settings.yaml` 의 `key_config_path` 가 가리키는 파일을 읽으며, 기본값은 `%APPDATA%\KeyZen\keyzen.yaml` 입니다. 다른 파일은 트레이 메뉴의 **Choose key config...** 로 고릅니다.
 
 ```powershell
-cargo run --bin keyzen -- --config examples/keyzen.yaml
-cargo run --bin keyzen -- validate --config examples/keyzen.yaml
-cargo run --bin keyzen -- dump --config examples/keyzen.yaml
+cargo run   # 트레이 실행 (로그: %APPDATA%\KeyZen\keyzen.log)
 ```
 
-- `validate` 는 설정 오류를 검사하고, `dump` 는 KeyZen이 해석한 정규화된 설정을 출력합니다.
+- 설정은 트레이가 시작할 때와 **Choose key config...** 로 고를 때 검증됩니다. 유효하지 않으면 적용되지 않고 이유가 알림으로 표시됩니다.
 - 실행 중인 tray는 설정 파일 변경을 자동으로 감지하지 않습니다. 고친 뒤에는 트레이 메뉴에서 **Choose key config...** 로 다시 고르세요.
 
 > [!TIP]
-> 설정을 고칠 때는 먼저 `validate` 로 검사하고, 적용 결과가 헷갈리면 `dump` 로 정규화된 형태를 확인하는 습관이 좋습니다.
+> 설정을 고친 뒤에는 트레이에서 파일을 다시 고르세요. 적용 결과가 헷갈리면 `KEYZEN_DEBUG_EVENTS=1` 로 실행해 `keyzen.log` 에서 이벤트 해석을 확인할 수 있습니다.
 
 ---
 
@@ -303,11 +301,7 @@ KeyZen은 실행 전에 다음 조건을 검사합니다.
 - `tap_dance` 는 최소 하나 이상의 탭 횟수를 가져야 하며, `0` 은 사용할 수 없습니다.
 - `tap_hold` 와 `tap_dance` 는 서로 중첩할 수 없습니다.
 
-설정을 수정한 뒤에는 먼저 다음 명령으로 확인하는 것을 권장합니다.
-
-```powershell
-cargo run -- validate --config path\to\keyzen.yaml
-```
+설정을 수정한 뒤에는 트레이에서 **Choose key config...** 로 다시 골라 검증·적용하세요. `cargo test --workspace` 는 저장소에 포함된 예제 설정이 유효한지도 함께 검사합니다.
 
 ---
 

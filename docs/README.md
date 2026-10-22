@@ -18,13 +18,11 @@ KeyZen의 키 매핑 설정, 트레이 앱 동작, 자동 실행, 진단 방법�
 ## ⚡ 빠른 시작
 
 ```powershell
-cargo build --workspace                 # keyzen.exe + keyzen-tray.exe 빌드
-
-cargo run --bin keyzen -- validate --config examples/keyzen.yaml   # 설정 검증
-cargo run --bin keyzen -- --config examples/keyzen.yaml            # 포그라운드 실행 (Ctrl+C로 종료)
+cargo build --workspace                 # keyzen.exe 빌드
+cargo run                               # 트레이 실행 (로그: %APPDATA%\KeyZen\keyzen.log)
 ```
 
-- 릴리스 zip을 쓰는 경우 `keyzen.exe` 를 실행하면 콘솔 없는 `keyzen-tray.exe` 가 백그라운드로 뜹니다.
+- 릴리스 zip을 쓰는 경우 `keyzen.exe` 를 실행하면 콘솔 없이 백그라운드로 뜹니다.
 - 트레이 아이콘을 마우스 오른쪽 버튼으로 클릭 → **Choose key config...** 로 키 매핑 파일을 고릅니다.
 - 예시 설정은 [examples/keyzen.yaml](../examples/keyzen.yaml) (최소 구성)과 [examples/fullkeyzen.yaml](../examples/fullkeyzen.yaml) (모든 액션)에 있습니다.
 

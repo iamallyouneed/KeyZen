@@ -389,7 +389,7 @@ mod tests {
             &paths,
             &mut settings,
             true,
-            Path::new("keyzen-tray.exe"),
+            Path::new("keyzen.exe"),
         )
         .unwrap();
 
@@ -414,7 +414,7 @@ mod tests {
                 &paths,
                 &mut settings,
                 true,
-                Path::new("keyzen-tray.exe"),
+                Path::new("keyzen.exe"),
             )
             .is_err()
         );
@@ -434,12 +434,12 @@ mod tests {
     #[test]
     fn strips_verbatim_paths_before_task_scheduler_registration() {
         assert_eq!(
-            super::strip_windows_verbatim_prefix(r"\\?\C:\KeyZen\keyzen-tray.exe"),
-            r"C:\KeyZen\keyzen-tray.exe"
+            super::strip_windows_verbatim_prefix(r"\\?\C:\KeyZen\keyzen.exe"),
+            r"C:\KeyZen\keyzen.exe"
         );
         assert_eq!(
-            super::strip_windows_verbatim_prefix(r"\\?\UNC\server\share\keyzen-tray.exe"),
-            r"\\server\share\keyzen-tray.exe"
+            super::strip_windows_verbatim_prefix(r"\\?\UNC\server\share\keyzen.exe"),
+            r"\\server\share\keyzen.exe"
         );
     }
 }

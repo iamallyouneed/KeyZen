@@ -24,43 +24,12 @@ const TIMER_MAX_SLEEP_MS: u64 = 50;
 
 static RUNTIME: OnceLock<Arc<Runtime>> = OnceLock::new();
 
-pub fn run(config: Config) -> Result<(), KeyzenWinError> {
-    let (_tx, rx) = mpsc::channel();
-    run_until_stop(config, rx)
-}
-
-pub fn run_until_stop(config: Config, stop: mpsc::Receiver<()>) -> Result<(), KeyzenWinError> {
-    run_until_stop_with_debug_events(config, stop, false)
-}
-
-pub fn run_until_stop_with_debug_events(
-    config: Config,
-    stop: mpsc::Receiver<()>,
-    debug_events: bool,
-) -> Result<(), KeyzenWinError> {
-    let (command_tx, command_rx) = mpsc::channel();
-    let _bridge = thread::spawn(move || {
-        let _ = stop.recv();
-        let _ = command_tx.send(RuntimeCommand::Stop);
-    });
-    run_controlled_inner(Some(config), false, command_rx, debug_events)
-}
-
 pub fn run_controlled(
     config: Option<Config>,
     paused: bool,
     commands: mpsc::Receiver<RuntimeCommand>,
 ) -> Result<(), KeyzenWinError> {
-    run_controlled_inner(config, paused, commands, false)
-}
-
-fn run_controlled_inner(
-    config: Option<Config>,
-    paused: bool,
-    commands: mpsc::Receiver<RuntimeCommand>,
-    debug_events: bool,
-) -> Result<(), KeyzenWinError> {
-    let runtime = Arc::new(Runtime::new(config, paused, debug_events));
+    let runtime = Arc::new(Runtime::new(config, paused));
     let _ = RUNTIME.set(runtime.clone());
     info!(
         target: "keyzen_win::lifecycle",
@@ -222,33 +191,32 @@ fn poll_timer(runtime: Arc<Runtime>) {
 unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code == HC_ACTION as i32 {
         let keyboard = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
-        if keyboard.flags & LLKHF_INJECTED == 0 {
-            if let Some(event) = keyboard_event(wparam, keyboard) {
-                if let Some(runtime) = RUNTIME.get() {
-                    if runtime.paused.load(Ordering::SeqCst) {
-                        return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
-                    }
-                    let event_for_log = runtime.debug_events.then(|| event.clone());
-                    let (outcome, layers) = runtime
-                        .with_engine(|engine| {
-                            let outcome = engine.handle_event(event);
-                            let layers = if runtime.debug_events {
-                                engine.active_layers().to_vec()
-                            } else {
-                                Vec::new()
-                            };
-                            (outcome, layers)
-                        })
-                        .unwrap_or_default();
-                    let suppress = outcome.suppress;
-                    if let Some(event) = event_for_log.as_ref() {
-                        runtime.log_key_event(event, &outcome, &layers);
-                    }
-                    runtime.emit_outcome(outcome);
-                    if suppress {
-                        return 1;
-                    }
-                }
+        if keyboard.flags & LLKHF_INJECTED == 0
+            && let Some(event) = keyboard_event(wparam, keyboard)
+            && let Some(runtime) = RUNTIME.get()
+        {
+            if runtime.paused.load(Ordering::SeqCst) {
+                return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
+            }
+            let event_for_log = runtime.debug_events.then(|| event.clone());
+            let (outcome, layers) = runtime
+                .with_engine(|engine| {
+                    let outcome = engine.handle_event(event);
+                    let layers = if runtime.debug_events {
+                        engine.active_layers().to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                    (outcome, layers)
+                })
+                .unwrap_or_default();
+            let suppress = outcome.suppress;
+            if let Some(event) = event_for_log.as_ref() {
+                runtime.log_key_event(event, &outcome, &layers);
+            }
+            runtime.emit_outcome(outcome);
+            if suppress {
+                return 1;
             }
         }
     }
@@ -281,14 +249,14 @@ struct Runtime {
 }
 
 impl Runtime {
-    fn new(config: Option<Config>, paused: bool, debug_events: bool) -> Self {
+    fn new(config: Option<Config>, paused: bool) -> Self {
         Self {
             engine: Mutex::new(config.map(Engine::new)),
             emitter: SendInputEmitter,
             started_at: Instant::now(),
             running: AtomicBool::new(true),
             paused: AtomicBool::new(paused),
-            debug_events,
+            debug_events: crate::debug_events_enabled(),
         }
     }
 
@@ -532,7 +500,7 @@ fn send_keyboard_input(input: KeyboardInput) -> Result<(), KeyzenWinError> {
         flags |= KEYEVENTF_KEYUP;
     }
 
-    let mut raw = INPUT {
+    let raw = INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
@@ -545,7 +513,7 @@ fn send_keyboard_input(input: KeyboardInput) -> Result<(), KeyzenWinError> {
         },
     };
 
-    let sent = unsafe { SendInput(1, &mut raw, size_of::<INPUT>() as i32) };
+    let sent = unsafe { SendInput(1, &raw, size_of::<INPUT>() as i32) };
     if sent == 0 {
         return Err(last_error("SendInput"));
     }

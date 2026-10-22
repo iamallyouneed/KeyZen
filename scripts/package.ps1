@@ -138,6 +138,48 @@ function Copy-RequiredDirectory {
     Copy-Item -LiteralPath $Source -Destination $Destination -Recurse
 }
 
+function Get-PeSubsystem {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -lt 0x40) {
+        throw "Not a PE file: $Path"
+    }
+
+    $lfanew = [System.BitConverter]::ToInt32($bytes, 0x3C)
+    $subsystemOffset = $lfanew + 92
+    if ($lfanew -le 0 -or ($subsystemOffset + 2) -gt $bytes.Length) {
+        throw "Invalid PE header: $Path"
+    }
+    if ($bytes[$lfanew] -ne 0x50 -or $bytes[$lfanew + 1] -ne 0x45) {
+        throw "Missing PE signature: $Path"
+    }
+
+    return [System.BitConverter]::ToUInt16($bytes, $subsystemOffset)
+}
+
+function Assert-GuiExecutable {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $subsystem = Get-PeSubsystem -Path $Path
+    if ($subsystem -ne 2) {
+        throw "Expected a Windows GUI subsystem executable (starts without a console): $Path (subsystem $subsystem)"
+    }
+}
+
+function Assert-SingleExecutable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Directory,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $executables = @(Get-ChildItem -LiteralPath $Directory -Filter "*.exe" -File)
+    $names = ($executables | Select-Object -ExpandProperty Name) -join ", "
+    if ($executables.Count -ne 1 -or $executables[0].Name -ne $Name) {
+        throw "Expected exactly one executable named $Name in $Directory, found: $names"
+    }
+}
+
 function Stop-LockingKeyZenProcesses {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -146,7 +188,7 @@ function Stop-LockingKeyZenProcesses {
 
     $releaseDir = [System.IO.Path]::GetFullPath((Join-Path $Workspace "target\release")).TrimEnd('\') + '\'
     $processes = @(
-        Get-Process -Name "keyzen", "keyzen-tray" -ErrorAction SilentlyContinue |
+        Get-Process -Name "keyzen" -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.Path -and
                 [System.IO.Path]::GetFullPath($_.Path).StartsWith($releaseDir, [System.StringComparison]::OrdinalIgnoreCase)
@@ -192,7 +234,6 @@ $hashPath = Join-Path $distDir "SHA256SUMS.txt"
 $verifyDir = Join-Path $distDir "_verify-$PackageName"
 $releaseDir = Join-Path $workspace "target\release"
 $keyzenExe = Join-Path $releaseDir "keyzen.exe"
-$keyzenTrayExe = Join-Path $releaseDir "keyzen-tray.exe"
 
 Write-Host "Packaging KeyZen $Version"
 Write-Host "Workspace: $workspace"
@@ -222,14 +263,12 @@ if (-not $SkipBuild) {
     }
 }
 
-Invoke-Step "Validating packaged configs with release binary" {
+Invoke-Step "Verifying release executable" {
     if (-not (Test-Path -LiteralPath $keyzenExe -PathType Leaf)) {
         throw "Release executable is missing: $keyzenExe"
     }
 
-    Invoke-CheckedCommand -FilePath $keyzenExe -Arguments @("--version")
-    Invoke-CheckedCommand -FilePath $keyzenExe -Arguments @("validate", "--config", "examples\keyzen.yaml")
-    Invoke-CheckedCommand -FilePath $keyzenExe -Arguments @("validate", "--config", "examples\fullkeyzen.yaml")
+    Assert-GuiExecutable -Path $keyzenExe
 }
 
 Invoke-Step "Staging package files" {
@@ -240,7 +279,6 @@ Invoke-Step "Staging package files" {
 
     New-Item -ItemType Directory -Path $stageDir | Out-Null
     Copy-RequiredFile -Source $keyzenExe -Destination $stageDir
-    Copy-RequiredFile -Source $keyzenTrayExe -Destination $stageDir
     Copy-RequiredFile -Source (Join-Path $workspace "README.md") -Destination $stageDir
     Copy-RequiredFile -Source (Join-Path $workspace "CHANGELOG.md") -Destination $stageDir
     Copy-RequiredFile -Source (Join-Path $workspace "LICENSE") -Destination $stageDir
@@ -258,9 +296,8 @@ if (-not $SkipPackageVerify) {
     Invoke-Step "Verifying zip contents" {
         New-Item -ItemType Directory -Path $verifyDir | Out-Null
         Expand-Archive -LiteralPath $zipPath -DestinationPath $verifyDir -Force
-        Invoke-CheckedCommand -FilePath (Join-Path $verifyDir "keyzen.exe") -Arguments @("--version")
-        Invoke-CheckedCommand -FilePath (Join-Path $verifyDir "keyzen.exe") -Arguments @("validate", "--config", (Join-Path $verifyDir "examples\keyzen.yaml"))
-        Invoke-CheckedCommand -FilePath (Join-Path $verifyDir "keyzen.exe") -Arguments @("validate", "--config", (Join-Path $verifyDir "examples\fullkeyzen.yaml"))
+        Assert-SingleExecutable -Directory $verifyDir -Name "keyzen.exe"
+        Assert-GuiExecutable -Path (Join-Path $verifyDir "keyzen.exe")
         Remove-WorkspaceItem -Path $verifyDir -Workspace $workspace -Recurse
     }
 }

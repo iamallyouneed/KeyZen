@@ -74,12 +74,12 @@ fn canonical_key_name(raw: &str) -> String {
         }
     }
 
-    if compact.starts_with('f') && compact.len() <= 3 {
-        if let Ok(number) = compact[1..].parse::<u8>() {
-            if (1..=24).contains(&number) {
-                return format!("F{number}");
-            }
-        }
+    if compact.starts_with('f')
+        && compact.len() <= 3
+        && let Ok(number) = compact[1..].parse::<u8>()
+        && (1..=24).contains(&number)
+    {
+        return format!("F{number}");
     }
 
     match compact.as_str() {

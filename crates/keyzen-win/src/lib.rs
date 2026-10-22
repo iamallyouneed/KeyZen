@@ -8,6 +8,7 @@ pub mod tray;
 use keyzen_core::{KeyCode, OutputCommand};
 
 pub const DEBUG_EVENTS_TARGET: &str = "keyzen_events";
+pub const DEBUG_EVENTS_ENV: &str = "KEYZEN_DEBUG_EVENTS";
 
 #[derive(Debug)]
 pub enum RuntimeCommand {
@@ -41,35 +42,20 @@ impl Emitter for NullEmitter {
     }
 }
 
+/// Structured key event diagnostics are opt-in through the environment so that the
+/// console-less tray remains quiet by default.
+pub fn debug_events_enabled() -> bool {
+    match std::env::var(DEBUG_EVENTS_ENV) {
+        Ok(value) => !value.is_empty() && value != "0",
+        Err(_) => false,
+    }
+}
+
 #[cfg(windows)]
 mod platform;
 
 #[cfg(windows)]
-pub use platform::{
-    SendInputEmitter, run, run_controlled, run_until_stop, run_until_stop_with_debug_events,
-};
-
-#[cfg(not(windows))]
-pub fn run(_config: keyzen_core::Config) -> Result<(), KeyzenWinError> {
-    Err(KeyzenWinError::UnsupportedPlatform)
-}
-
-#[cfg(not(windows))]
-pub fn run_until_stop(
-    _config: keyzen_core::Config,
-    _stop: std::sync::mpsc::Receiver<()>,
-) -> Result<(), KeyzenWinError> {
-    Err(KeyzenWinError::UnsupportedPlatform)
-}
-
-#[cfg(not(windows))]
-pub fn run_until_stop_with_debug_events(
-    _config: keyzen_core::Config,
-    _stop: std::sync::mpsc::Receiver<()>,
-    _debug_events: bool,
-) -> Result<(), KeyzenWinError> {
-    Err(KeyzenWinError::UnsupportedPlatform)
-}
+pub use platform::{SendInputEmitter, run_controlled};
 
 #[cfg(not(windows))]
 pub fn run_controlled(

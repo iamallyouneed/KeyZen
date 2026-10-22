@@ -592,10 +592,10 @@ impl Engine {
         match layer {
             Some(BASE_LAYER) => {}
             Some(layer) => {
-                if let Some(index) = self.layer_stack.iter().rposition(|entry| entry == layer) {
-                    if index > 0 {
-                        self.layer_stack.remove(index);
-                    }
+                if let Some(index) = self.layer_stack.iter().rposition(|entry| entry == layer)
+                    && index > 0
+                {
+                    self.layer_stack.remove(index);
                 }
             }
             None => {

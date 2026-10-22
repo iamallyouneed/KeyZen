@@ -37,7 +37,7 @@ key_config_path: C:\Users\user\AppData\Roaming\KeyZen\keyzen.yaml
 
 ## 3. 최초 실행
 
-`keyzen` 또는 `keyzen tray` 를 처음 실행하면 다음 파일을 자동 생성합니다.
+`keyzen.exe` 를 처음 실행하면 다음 파일을 자동 생성합니다.
 
 ```text
 %APPDATA%\KeyZen\settings.yaml
@@ -88,7 +88,7 @@ Quit
 | --- | --- |
 | 작업 이름 | `\KeyZen\Autorun for <username>` |
 | 트리거 | 현재 사용자 로그온, 3초 지연(`PT03S`) |
-| 실행 파일 | 현재 `keyzen-tray.exe` 의 절대 경로 |
+| 실행 파일 | 현재 `keyzen.exe` 의 절대 경로 |
 | 로그온 유형 | `TASK_LOGON_INTERACTIVE_TOKEN` |
 | 실행 권한 | 일반 사용자 권한(`TASK_RUNLEVEL_LUA`) |
 
@@ -98,21 +98,10 @@ Quit
 
 ## 6. 실행 모드와 단일 인스턴스
 
-```powershell
-keyzen
-keyzen tray
-```
+KeyZen은 콘솔 없는 트레이 앱 하나로 동작합니다. `keyzen.exe` 를 실행하면 백그라운드로 뜨고 알림 영역에 아이콘이 생기며, 종료는 트레이 메뉴의 `Quit` 입니다.
 
-두 명령은 같은 폴더의 콘솔 없는 `keyzen-tray.exe` 를 백그라운드로 실행하고 즉시 종료합니다.
-
-```powershell
-keyzen --config path\to\keyzen.yaml
-```
-
-`--config` 를 직접 지정하면 기존 foreground 콘솔 모드로 실행합니다. 이 모드에서는 `Ctrl+C` 로 종료합니다.
-
-- `Local\KeyZen.Runtime` named mutex로 tray와 foreground remapper 중 하나만 실행할 수 있습니다.
-- 이미 하나가 실행 중이면 다른 하나는 시작되지 않습니다.
+- `Local\KeyZen.Runtime` named mutex로 KeyZen은 하나만 실행됩니다.
+- 이미 실행 중이면 새 인스턴스는 로그만 남기고 조용히 종료합니다.
 
 ---
 

@@ -31,13 +31,20 @@ impl TrayDiagnostics {
             .open(&log_path)?;
         let log = Arc::new(Mutex::new(file));
 
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("info"))
-            .add_directive(
-                "keyzen_win::lifecycle=info"
+        let mut filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+        if crate::debug_events_enabled() {
+            filter = filter.add_directive(
+                format!("{}=debug", crate::DEBUG_EVENTS_TARGET)
                     .parse()
-                    .expect("tray lifecycle log directive should be valid"),
+                    .expect("debug event log directive should be valid"),
             );
+        }
+        let filter = filter.add_directive(
+            "keyzen_win::lifecycle=info"
+                .parse()
+                .expect("tray lifecycle log directive should be valid"),
+        );
         tracing_subscriber::fmt()
             .with_ansi(false)
             .with_env_filter(filter)
@@ -82,16 +89,23 @@ impl TrayDiagnostics {
     }
 
     pub fn complete(self, clean_shutdown: bool) {
-        if clean_shutdown
-            && self.session_started
-            && let Err(error) = fs::remove_file(&self.marker_path)
-        {
-            tracing::warn!(
-                target: "keyzen_win::lifecycle",
-                path = %self.marker_path.display(),
-                %error,
-                "failed to remove tray running marker"
-            );
+        if self.session_started {
+            if clean_shutdown {
+                if let Err(error) = fs::remove_file(&self.marker_path) {
+                    tracing::warn!(
+                        target: "keyzen_win::lifecycle",
+                        path = %self.marker_path.display(),
+                        %error,
+                        "failed to remove tray running marker"
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    target: "keyzen_win::lifecycle",
+                    path = %self.marker_path.display(),
+                    "tray session ended without a shutdown request; keeping running marker"
+                );
+            }
         }
         self.flush();
     }
@@ -245,6 +259,25 @@ mod tests {
         let log = fs::read_to_string(dir.join("keyzen.log")).unwrap();
         assert!(log.contains("diagnostics integration test event"));
         assert!(!dir.join("tray.running").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn keeps_running_marker_when_session_did_not_end_cleanly() {
+        let dir = temp_dir("unclean");
+        fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("tray.running");
+        fs::write(&marker, "pid=1").unwrap();
+        let log = fs::File::create(dir.join("keyzen.log")).unwrap();
+        let diagnostics = TrayDiagnostics {
+            log: std::sync::Arc::new(std::sync::Mutex::new(log)),
+            marker_path: marker.clone(),
+            session_started: true,
+        };
+
+        diagnostics.complete(false);
+
+        assert!(marker.exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }
