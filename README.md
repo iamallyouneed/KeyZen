@@ -209,8 +209,7 @@ flowchart LR
 | 크레이트 | 내용 |
 | --- | --- |
 | `crates/keyzen-core` | OS 의존성 없는 엔진. YAML 파싱·검증(`config`), 레이어 스택과 tap-hold·tap dance·one-shot 상태 머신(`engine`), 키 이름 정규화(`key`) |
-| `crates/keyzen-win` | Windows 연동. 저수준 키보드 훅·`SendInput`(`platform`), 트레이(`tray`), 자동 실행 작업(`startup`), 앱 설정(`app_settings`), 단일 인스턴스(`single_instance`), 진단 로그(`diagnostics`) |
-| `crates/keyzen-cli` | 단일 `keyzen` 바이너리. 콘솔 없이 도는 트레이 런타임 진입점 |
+| `crates/keyzen-win` | Windows 연동과 `keyzen` 바이너리. 저수준 키보드 훅·`SendInput`(`platform`), 트레이(`tray`), 자동 실행 작업(`startup`), 앱 설정(`app_settings`), 단일 인스턴스(`single_instance`), 진단 로그(`diagnostics`) |
 
 ```powershell
 cargo test --workspace                    # 테스트 (examples 설정 검증 포함)

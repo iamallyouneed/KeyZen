@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Consolidate the two executables into a single console-less `keyzen.exe`. The tray runtime is now the only entry point; the launcher, foreground remapper, `validate`/`dump` subcommands, `--config`, and `--debug-events` are removed.
+- Merge the `keyzen-cli` crate into `keyzen-win`: one crate now builds the `keyzen` binary, and `cargo run` still starts the tray.
 - Set `KEYZEN_DEBUG_EVENTS=1` to write structured key event diagnostics to `keyzen.log` instead of the console.
 - Restore the tray icon after Explorer restarts instead of trusting the existing registration state.
 - Remove the running marker when a session ends through Quit, logoff, or a hidden-window close, even if the remapping runtime reported an error; the next start no longer reports a false unclean shutdown.

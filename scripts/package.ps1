@@ -3,7 +3,7 @@
 Build and package KeyZen as a portable Windows zip.
 
 .DESCRIPTION
-The script detects the KeyZen version from crates/keyzen-cli/Cargo.toml,
+The script detects the KeyZen version from crates/keyzen-win/Cargo.toml,
 runs the release checks, creates dist/KeyZen-<version>-windows-<arch>.zip,
 writes dist/SHA256SUMS.txt, and verifies the packaged executable.
 
@@ -62,7 +62,7 @@ function Invoke-CheckedCommand {
 function Get-KeyZenVersion {
     param([Parameter(Mandatory = $true)][string]$Workspace)
 
-    $manifestPath = Join-Path $Workspace "crates\keyzen-cli\Cargo.toml"
+    $manifestPath = Join-Path $Workspace "crates\keyzen-win\Cargo.toml"
     $manifest = Get-Content -LiteralPath $manifestPath -Raw
     if ($manifest -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
         throw "Could not find package version in $manifestPath"

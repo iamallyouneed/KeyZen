@@ -1,10 +1,9 @@
 [workspace]
 members = [
-    "crates/keyzen-cli",
     "crates/keyzen-core",
     "crates/keyzen-win",
 ]
-default-members = ["crates/keyzen-cli"]
+default-members = ["crates/keyzen-win"]
 resolver = "2"
 
 [workspace.package]
