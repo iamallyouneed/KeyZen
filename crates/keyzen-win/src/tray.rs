@@ -82,12 +82,12 @@ mod platform {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-        DispatchMessageW, GetCursorPos, GetMessageW, IDI_APPLICATION, LoadIconW, MF_CHECKED,
-        MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, PostQuitMessage, RegisterClassW,
-        RegisterWindowMessageW, SetForegroundWindow, TPM_RIGHTBUTTON, TrackPopupMenu,
-        TranslateMessage, WINDOW_EX_STYLE, WM_APP, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU,
-        WM_DESTROY, WM_ENDSESSION, WM_QUERYENDSESSION, WM_RBUTTONUP, WM_WINDOWPOSCHANGING,
-        WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_POPUP,
+        DispatchMessageW, FindWindowW, GetCursorPos, GetMessageW, IDI_APPLICATION, LoadIconW,
+        MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, PostMessageW, PostQuitMessage,
+        RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, TPM_RIGHTBUTTON,
+        TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE, WM_APP, WM_CLOSE, WM_COMMAND,
+        WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_QUERYENDSESSION, WM_RBUTTONUP,
+        WM_WINDOWPOSCHANGING, WNDCLASSW, WS_OVERLAPPEDWINDOW, WS_POPUP,
     };
     use windows::core::{Error as WindowsError, HRESULT, PCWSTR, w};
 
@@ -96,6 +96,7 @@ mod platform {
 
     static STATE: OnceLock<Mutex<TrayState>> = OnceLock::new();
     static TASKBAR_CREATED: OnceLock<u32> = OnceLock::new();
+    static ALREADY_RUNNING: OnceLock<u32> = OnceLock::new();
     static TRAY_ICON_CREATED: AtomicBool = AtomicBool::new(false);
 
     struct TrayState {
@@ -127,6 +128,7 @@ mod platform {
                     target: "keyzen_win::lifecycle",
                     "tray launch ignored because another KeyZen instance is running"
                 );
+                notify_existing_instance();
                 return Ok(());
             }
             Err(error) => {
@@ -333,6 +335,19 @@ mod platform {
         }
     }
 
+    fn notify_existing_instance() {
+        let message = unsafe { RegisterWindowMessageW(w!("KeyZenShowAlreadyRunning")) };
+        if message == 0 {
+            return;
+        }
+        let Ok(hwnd) = (unsafe { FindWindowW(w!("KeyZenTrayWindow"), w!("KeyZen")) }) else {
+            return;
+        };
+        unsafe {
+            let _ = PostMessageW(Some(hwnd), message, WPARAM(0), LPARAM(0));
+        }
+    }
+
     fn shutdown_requested() -> bool {
         STATE
             .get()
@@ -346,6 +361,10 @@ mod platform {
         TASKBAR_CREATED
             .set(taskbar_created)
             .map_err(|_| operation_error("taskbar message was already registered"))?;
+        let already_running = unsafe { RegisterWindowMessageW(w!("KeyZenShowAlreadyRunning")) };
+        if already_running != 0 {
+            let _ = ALREADY_RUNNING.set(already_running);
+        }
 
         let module = unsafe { GetModuleHandleW(None) }
             .map_err(|error| operation_error(format!("GetModuleHandleW failed: {error}")))?;
@@ -401,6 +420,11 @@ mod platform {
                     "failed to restore tray icon after TaskbarCreated"
                 );
             }
+            return LRESULT(0);
+        }
+
+        if ALREADY_RUNNING.get().copied() == Some(message) {
+            show_notification(hwnd, "KeyZen is already running.");
             return LRESULT(0);
         }
 
@@ -625,6 +649,7 @@ mod platform {
         let Ok(mut state) = state.lock() else {
             return;
         };
+        let resuming = !state.has_config && state.paused;
         if state
             .runtime_tx
             .send(RuntimeCommand::ReplaceConfig(config))
@@ -635,6 +660,14 @@ mod platform {
         }
         state.has_config = true;
         state.settings.key_config_path = path;
+        if resuming && state.runtime_tx.send(RuntimeCommand::Pause(false)).is_ok() {
+            state.paused = false;
+            update_tooltip(hwnd, false);
+            tracing::info!(
+                target: "keyzen_win::lifecycle",
+                "remapping resumed after loading a valid key config"
+            );
+        }
         if let Err(error) = app_settings::save_at(&state.paths, &state.settings) {
             show_notification(
                 hwnd,

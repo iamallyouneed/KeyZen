@@ -155,7 +155,7 @@ layers:
 | --- | --- |
 | `Pause` | 체크된 동안 리매핑을 멈추고 키를 그대로 통과시킨다. 전환할 때 눌린 합성 키, 레이어, tap-hold, tap dance, one-shot 상태를 초기화한다 |
 | `Start at login` | 현재 사용자의 로그온 작업 `\KeyZen\Autorun for <사용자명>` 을 등록하거나 삭제한다 (3초 지연) |
-| `Choose key config...` | `.yaml`/`.yml` 파일을 골라 즉시 검증하고, 유효하면 바로 적용한다. 현재 Pause 상태는 유지된다 |
+| `Choose key config...` | `.yaml`/`.yml` 파일을 골라 즉시 검증하고, 유효하면 바로 적용한다. 설정이 없어 자동으로 일시정지된 상태였다면 적용 후 리매핑을 재개하고, 사용자가 직접 Pause한 경우에는 유지한다 |
 | `Quit` | 눌린 합성 키와 엔진 상태를 정리하고 종료한다 |
 
 - `keyzen.exe` 를 처음 실행하면 `%APPDATA%\KeyZen\settings.yaml` 과 `%APPDATA%\KeyZen\keyzen.yaml` (빈 `base` 레이어)을 자동으로 만듭니다.
@@ -228,7 +228,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - Windows 전용입니다.
 - 드라이버나 서비스가 아니라 일반 사용자 세션 프로그램입니다. 관리자 권한으로 실행된 앱의 키를 바꾸려면 KeyZen도 관리자 권한으로 실행해야 합니다.
 - `tap_hold` 와 `tap_dance` 안에 다른 `tap_hold`/`tap_dance` 를 중첩할 수 없습니다.
-- KeyZen은 동시에 하나만 실행됩니다 (`Local\KeyZen.Runtime` 뮤텍스로 보장). 이미 실행 중이면 새 인스턴스는 조용히 종료합니다.
+- KeyZen은 동시에 하나만 실행됩니다 (`Local\KeyZen.Runtime` 뮤텍스로 보장). 이미 실행 중이면 새 인스턴스는 실행 중인 트레이에 알림을 보내고 종료합니다.
 - 키 설정 파일 변경을 자동으로 감지하지 않습니다. 고친 뒤 트레이에서 다시 골라야 반영됩니다.
 - Pause 상태는 앱 설정에 저장되지 않습니다. 다시 실행하면 항상 실행 중 상태로 시작합니다.
 
