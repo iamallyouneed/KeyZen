@@ -13,9 +13,9 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, MSG,
-    PostThreadMessageW, SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL,
-    WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    CallNextHookEx, DispatchMessageW, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, MSG, PM_NOREMOVE,
+    PeekMessageW, PostThreadMessageW, SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx,
+    WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_USER,
 };
 
 const LLKHF_INJECTED: u32 = 0x0000_0010;
@@ -43,6 +43,12 @@ pub fn run_controlled(
     );
 
     let thread_id = unsafe { GetCurrentThreadId() };
+    // Create this thread's message queue up front. PostThreadMessageW fails on a thread
+    // without a queue, and the command thread can request Stop before the loop starts.
+    let mut scratch = MSG::default();
+    unsafe {
+        PeekMessageW(&mut scratch, null_mut(), WM_USER, WM_USER, PM_NOREMOVE);
+    }
     let command_runtime = runtime.clone();
     let command_thread = thread::spawn(move || {
         while command_runtime.running.load(Ordering::SeqCst) {
@@ -170,6 +176,10 @@ fn poll_timer(runtime: Arc<Runtime>) {
             .unwrap_or(TIMER_MAX_SLEEP_MS);
 
         thread::sleep(Duration::from_millis(sleep_ms));
+
+        if runtime.paused.load(Ordering::SeqCst) {
+            continue;
+        }
 
         let now = runtime.now_ms();
         let (outcome, layers) = runtime

@@ -6,6 +6,9 @@
 - Set `KEYZEN_DEBUG_EVENTS=1` to write structured key event diagnostics to `keyzen.log` instead of the console.
 - Restore the tray icon after Explorer restarts instead of trusting the existing registration state.
 - Remove the running marker when a session ends through Quit, logoff, or a hidden-window close, even if the remapping runtime reported an error; the next start no longer reports a false unclean shutdown.
+- Show a tray notification when the remapping runtime stops unexpectedly instead of failing silently.
+- Bound the shutdown wait to 5 seconds so Quit cannot hang the process.
+- Only report Start at login reconciliation failures when the feature is enabled.
 - Keep validating the bundled example configs in `cargo test --workspace`.
 - Upgrade note: quit the running `keyzen-tray.exe` before replacing files. The next launch re-registers the `\KeyZen\Autorun for <user>` task against `keyzen.exe`.
 

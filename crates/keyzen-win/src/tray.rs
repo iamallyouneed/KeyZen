@@ -67,6 +67,7 @@ mod platform {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock, mpsc};
     use std::thread;
+    use std::time::Duration;
     use windows::Win32::Foundation::{ERROR_CANCELLED, HWND, LPARAM, LRESULT, POINT, WPARAM};
     use windows::Win32::System::Com::{
         CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
@@ -206,10 +207,19 @@ mod platform {
 
         let tray_exe = std::env::current_exe()
             .map_err(|error| operation_error(format!("current_exe failed: {error}")))?;
-        let scheduler_notice = TaskSchedulerStartup
-            .set_enabled(settings.start_at_login, &tray_exe)
-            .err()
-            .map(|error| format!("Could not reconcile Start at login.\n{error}"));
+        let start_at_login = settings.start_at_login;
+        let scheduler_notice = match TaskSchedulerStartup.set_enabled(start_at_login, &tray_exe) {
+            Ok(()) => None,
+            Err(error) => {
+                tracing::warn!(
+                    target: "keyzen_win::lifecycle",
+                    %error,
+                    start_at_login,
+                    "failed to reconcile Start at login"
+                );
+                start_at_login.then(|| format!("Could not reconcile Start at login.\n{error}"))
+            }
+        };
 
         let (runtime_tx, runtime_rx) = mpsc::channel();
         STATE
@@ -228,6 +238,8 @@ mod platform {
         if try_add_tray_icon(hwnd, false) {
             tracing::info!(target: "keyzen_win::lifecycle", "tray icon registered");
         }
+        // HWND wraps a raw pointer, so pass its value across the thread boundary.
+        let hwnd_bits = hwnd.0 as usize;
         let runtime = thread::spawn(move || {
             tracing::info!(target: "keyzen_win::lifecycle", "remapping runtime thread started");
             let result = crate::run_controlled(config, paused, runtime_rx);
@@ -236,11 +248,19 @@ mod platform {
                     target: "keyzen_win::lifecycle",
                     "remapping runtime thread stopped"
                 ),
-                Err(error) => tracing::error!(
-                    target: "keyzen_win::lifecycle",
-                    %error,
-                    "remapping runtime thread failed"
-                ),
+                Err(error) => {
+                    tracing::error!(
+                        target: "keyzen_win::lifecycle",
+                        %error,
+                        "remapping runtime thread failed"
+                    );
+                    if !shutdown_requested() {
+                        show_notification(
+                            HWND(hwnd_bits as *mut c_void),
+                            &format!("KeyZen keyboard remapping stopped.\n{error}"),
+                        );
+                    }
+                }
             }
             result
         });
@@ -283,14 +303,42 @@ mod platform {
             let _ = state.runtime_tx.send(RuntimeCommand::Stop);
         }
         if let Some(error) = message_error {
-            let _ = runtime.join();
+            let _ = join_runtime(runtime);
             return Err(error);
         }
-        match runtime.join() {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(operation_error(error)),
-            Err(_) => Err(operation_error("KeyZen runtime thread panicked")),
+        join_runtime(runtime)
+    }
+
+    const RUNTIME_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+
+    fn join_runtime(
+        runtime: thread::JoinHandle<Result<(), crate::KeyzenWinError>>,
+    ) -> Result<(), TrayError> {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = tx.send(runtime.join());
+        });
+        match rx.recv_timeout(RUNTIME_STOP_TIMEOUT) {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(error))) => Err(operation_error(error)),
+            Ok(Err(_)) => Err(operation_error("KeyZen runtime thread panicked")),
+            Err(_) => {
+                tracing::error!(
+                    target: "keyzen_win::lifecycle",
+                    timeout_ms = RUNTIME_STOP_TIMEOUT.as_millis() as u64,
+                    "remapping runtime did not stop in time"
+                );
+                Err(operation_error("KeyZen runtime did not stop in time"))
+            }
         }
+    }
+
+    fn shutdown_requested() -> bool {
+        STATE
+            .get()
+            .and_then(|state| state.lock().ok())
+            .and_then(|state| state.shutdown_reason)
+            .is_some()
     }
 
     fn create_hidden_window() -> Result<HWND, TrayError> {
@@ -418,6 +466,8 @@ mod platform {
                         "tray hidden window was destroyed without a tray Quit request"
                     );
                 }
+                // Remove the icon while the window handle is still valid, then quit.
+                delete_tray_icon(hwnd);
                 unsafe { PostQuitMessage(0) };
                 LRESULT(0)
             }
