@@ -16,8 +16,8 @@ use std::time::Duration;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, FindWindowW, GetMessageW, MSG, PostMessageW, RegisterWindowMessageW,
-    TranslateMessage,
+    DispatchMessageW, FindWindowW, GetMessageW, MB_ICONINFORMATION, MB_OK, MSG, MessageBoxW,
+    RegisterWindowMessageW, SMTO_ABORTIFHUNG, SendMessageTimeoutW, TranslateMessage,
 };
 use windows::core::{Error as WindowsError, w};
 
@@ -78,9 +78,13 @@ pub fn run_tray_app() -> Result<(), TrayError> {
             "failed to create tray session marker"
         );
     }
+    let exe = std::env::current_exe()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
     tracing::info!(
         target: "keyzen_win::lifecycle",
         pid = std::process::id(),
+        exe = %exe,
         "tray process started"
     );
 
@@ -291,8 +295,29 @@ fn notify_existing_instance() {
     let Ok(hwnd) = (unsafe { FindWindowW(w!("KeyZenTrayWindow"), w!("KeyZen")) }) else {
         return;
     };
-    unsafe {
-        let _ = PostMessageW(Some(hwnd), message, WPARAM(0), LPARAM(0));
+    let mut handled = 0usize;
+    let delivered = unsafe {
+        SendMessageTimeoutW(
+            hwnd,
+            message,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG,
+            500,
+            Some(&mut handled),
+        )
+    };
+    // Older builds do not answer this message, so fall back to a visible dialog
+    // instead of exiting silently when the tray icon is not where the user looks.
+    if delivered.0 == 0 || handled != 1 {
+        unsafe {
+            MessageBoxW(
+                None,
+                w!("KeyZen is already running. Use the tray icon to quit the existing instance."),
+                w!("KeyZen"),
+                MB_OK | MB_ICONINFORMATION,
+            );
+        }
     }
 }
 

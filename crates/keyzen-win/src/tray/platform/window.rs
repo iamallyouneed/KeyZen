@@ -80,7 +80,7 @@ unsafe extern "system" fn window_proc(
 
     if ALREADY_RUNNING.get().copied() == Some(message) {
         icon::show_notification(hwnd, "KeyZen is already running.");
-        return LRESULT(0);
+        return LRESULT(1);
     }
 
     match message {
