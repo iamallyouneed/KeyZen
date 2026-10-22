@@ -11,6 +11,8 @@
 - Restore the tray icon after Explorer restarts instead of trusting the existing registration state.
 - Remove the running marker when a session ends through Quit, logoff, or a hidden-window close, even if the remapping runtime reported an error; the next start no longer reports a false unclean shutdown.
 - Show a tray notification when the remapping runtime stops unexpectedly instead of failing silently.
+- Show the active key config file and its mapping count at the top of the tray menu.
+- Warn at startup when the selected config has no mappings, and log the resolved config path with its mapping count.
 - Resume remapping after choosing a valid config when the tray started paused because no config was loaded.
 - Notify through the running tray instead of exiting silently when KeyZen is launched twice.
 - Bound the shutdown wait to 5 seconds so Quit cannot hang the process.

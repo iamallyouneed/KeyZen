@@ -60,6 +60,8 @@ layers:
 메뉴 라벨은 영어로 표시되며 순서는 다음과 같습니다.
 
 ```text
+Config: mykeyzen.yaml (20 keys)
+---
 Pause
 ---
 Start at login
@@ -67,6 +69,8 @@ Choose key config...
 ---
 Quit
 ```
+
+맨 위 줄은 현재 적용 중인 설정 파일과 전체 매핑 수를 보여 줍니다. 설정을 읽지 못했으면 `(not loaded)`, 매핑이 없으면 `(no mappings)`로 표시됩니다.
 
 | 메뉴 | 동작 |
 | --- | --- |

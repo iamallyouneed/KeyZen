@@ -4,7 +4,7 @@ use super::{STATE, operation_error};
 use crate::RuntimeCommand;
 use crate::app_settings;
 use crate::startup::{TaskSchedulerStartup, update_start_at_login};
-use crate::tray::{TrayError, TrayMenuCommand};
+use crate::tray::{TrayError, TrayMenuCommand, status_label};
 use std::ffi::c_void;
 use std::path::PathBuf;
 use windows::Win32::Foundation::{ERROR_CANCELLED, HWND, POINT};
@@ -13,21 +13,34 @@ use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH};
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, DestroyMenu, DestroyWindow, GetCursorPos, MENU_ITEM_FLAGS,
-    MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, SetForegroundWindow, TPM_RIGHTBUTTON,
-    TrackPopupMenu,
+    MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, SetForegroundWindow,
+    TPM_RIGHTBUTTON, TrackPopupMenu,
 };
 use windows::core::{HRESULT, PCWSTR, w};
 
 pub(super) fn show_context_menu(hwnd: HWND) -> Result<(), TrayError> {
-    let (paused, start_at_login) = STATE
+    let (paused, start_at_login, loaded, config_path, mapped_keys) = STATE
         .get()
         .and_then(|state| state.lock().ok())
-        .map(|state| (state.paused, state.settings.start_at_login))
-        .unwrap_or((true, false));
+        .map(|state| {
+            (
+                state.paused,
+                state.settings.start_at_login,
+                state.has_config,
+                state.config_path.clone(),
+                state.mapped_keys,
+            )
+        })
+        .unwrap_or((true, false, false, PathBuf::new(), 0));
+    let status = status_label(loaded, &config_path, mapped_keys);
+    let status_wide = status.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
     let menu = unsafe { CreatePopupMenu() }
         .map_err(|error| operation_error(format!("CreatePopupMenu failed: {error}")))?;
 
     unsafe {
+        AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(status_wide.as_ptr()))
+            .map_err(operation_error)?;
+        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()).map_err(operation_error)?;
         AppendMenuW(
             menu,
             MF_STRING | checked_flag(paused),
@@ -161,6 +174,7 @@ fn choose_key_config(hwnd: HWND) {
             return;
         }
     };
+    let mapped_keys = config.mapping_count();
 
     let Some(state) = STATE.get() else {
         return;
@@ -178,6 +192,8 @@ fn choose_key_config(hwnd: HWND) {
         return;
     }
     state.has_config = true;
+    state.config_path = path.clone();
+    state.mapped_keys = mapped_keys;
     state.settings.key_config_path = path;
     if resuming && state.runtime_tx.send(RuntimeCommand::Pause(false)).is_ok() {
         state.paused = false;
@@ -192,6 +208,8 @@ fn choose_key_config(hwnd: HWND) {
             hwnd,
             &format!("The key config was loaded but the app setting was not saved.\n{error}"),
         );
+    } else if mapped_keys == 0 {
+        icon::show_notification(hwnd, "The selected key config has no mappings.");
     }
 }
 

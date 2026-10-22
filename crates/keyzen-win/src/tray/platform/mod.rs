@@ -31,6 +31,8 @@ struct TrayState {
     runtime_tx: mpsc::Sender<RuntimeCommand>,
     paused: bool,
     has_config: bool,
+    config_path: PathBuf,
+    mapped_keys: usize,
     tray_exe: PathBuf,
     shutdown_reason: Option<&'static str>,
 }
@@ -113,6 +115,7 @@ fn run_tray_session() -> Result<(), TrayError> {
 
     let (paths, settings) =
         app_settings::load_or_bootstrap().map_err(|error| operation_error(error.to_string()))?;
+    let config_path = settings.resolve_key_config_path(&paths.settings);
     let (config, paused, startup_notice) =
         match app_settings::load_key_config(&paths.settings, &settings) {
             Ok(config) => (Some(config), false, None),
@@ -124,6 +127,23 @@ fn run_tray_session() -> Result<(), TrayError> {
                 )),
             ),
         };
+    let mapped_keys = config
+        .as_ref()
+        .map(|config| config.mapping_count())
+        .unwrap_or(0);
+    tracing::info!(
+        target: "keyzen_win::lifecycle",
+        config = %config_path.display(),
+        mapped_keys,
+        paused,
+        "key config loaded"
+    );
+    let empty_config_notice = (!paused && mapped_keys == 0).then(|| {
+        format!(
+            "The key config {} has no mappings. Add mappings or choose another file.",
+            config_path.display()
+        )
+    });
 
     let tray_exe = std::env::current_exe()
         .map_err(|error| operation_error(format!("current_exe failed: {error}")))?;
@@ -149,6 +169,8 @@ fn run_tray_session() -> Result<(), TrayError> {
             runtime_tx,
             paused,
             has_config: !paused,
+            config_path,
+            mapped_keys,
             tray_exe,
             shutdown_reason: None,
         }))
@@ -185,7 +207,7 @@ fn run_tray_session() -> Result<(), TrayError> {
         result
     });
 
-    if let Some(message) = startup_notice.or(scheduler_notice) {
+    if let Some(message) = startup_notice.or(empty_config_notice).or(scheduler_notice) {
         icon::show_notification(hwnd, &message);
     }
 

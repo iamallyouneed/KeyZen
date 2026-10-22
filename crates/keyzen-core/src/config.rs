@@ -87,6 +87,11 @@ impl Config {
         serde_yaml::to_string(self)
     }
 
+    /// Total number of key mappings across every layer.
+    pub fn mapping_count(&self) -> usize {
+        self.layers.values().map(BTreeMap::len).sum()
+    }
+
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.settings.tapping_term_ms == 0 {
             return Err(ConfigError::InvalidTiming {
@@ -511,6 +516,23 @@ layers:
 
         assert!(config.layers.contains_key("base"));
         assert!(config.layers.contains_key("nav"));
+    }
+
+    #[test]
+    fn counts_mappings_across_layers() {
+        let config = Config::from_yaml_str(
+            r#"
+layers:
+  base:
+    CapsLock: Escape
+  nav:
+    H: Left
+    J: Down
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.mapping_count(), 3);
     }
 
     #[test]

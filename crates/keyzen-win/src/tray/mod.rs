@@ -1,3 +1,5 @@
+use std::path::Path;
+
 pub const MENU_LABELS: [&str; 4] = ["Pause", "Start at login", "Choose key config...", "Quit"];
 
 const ID_PAUSE: usize = 1001;
@@ -20,6 +22,21 @@ pub fn command_from_menu_id(id: usize) -> Option<TrayMenuCommand> {
         ID_CHOOSE_KEY_CONFIG => Some(TrayMenuCommand::ChooseKeyConfig),
         ID_QUIT => Some(TrayMenuCommand::Quit),
         _ => None,
+    }
+}
+
+/// One-line summary of the active key config shown at the top of the tray menu.
+pub(crate) fn status_label(loaded: bool, path: &Path, mapped_keys: usize) -> String {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("unknown");
+    if !loaded {
+        format!("Config: {name} (not loaded)")
+    } else if mapped_keys == 0 {
+        format!("Config: {name} (no mappings)")
+    } else {
+        format!("Config: {name} ({mapped_keys} keys)")
     }
 }
 
@@ -58,7 +75,28 @@ pub use platform::run_tray_app;
 
 #[cfg(test)]
 mod tests {
-    use super::{MENU_LABELS, TrayMenuCommand, command_from_menu_id, is_clean_shutdown_reason};
+    use super::{
+        MENU_LABELS, TrayMenuCommand, command_from_menu_id, is_clean_shutdown_reason, status_label,
+    };
+    use std::path::Path;
+
+    #[test]
+    fn describes_the_active_config() {
+        let path = Path::new(r"C:\Users\me\KeyZen\mykeyzen.yaml");
+
+        assert_eq!(
+            status_label(true, path, 20),
+            "Config: mykeyzen.yaml (20 keys)"
+        );
+        assert_eq!(
+            status_label(true, path, 0),
+            "Config: mykeyzen.yaml (no mappings)"
+        );
+        assert_eq!(
+            status_label(false, path, 0),
+            "Config: mykeyzen.yaml (not loaded)"
+        );
+    }
 
     #[test]
     fn maps_command_ids_to_english_menu_events() {
